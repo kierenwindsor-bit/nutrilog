@@ -1102,10 +1102,10 @@ function renderHome(){
             const step=c.unit==='g'||c.unit==='ml'?10:1;
             return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
               <span style="font-size:11px;flex:1">${c.name}</span>
-              <button class="qty-btn" onclick="adjInlineQty(this,${JSON.stringify(preset.id)},${ci},-${step})">−</button>
+              <button class="qty-btn" onclick="adjInlineQty(this,'${preset.id}',${ci},-${step})">−</button>
               <input type="number" id="iqv-${preset.id}-${ci}" value="${qtys[ci]}" min="0" step="1" oninput="adjInlineQtyDirect('${preset.id}',${ci},this.value)" style="border:1px solid var(--border2);background:var(--card);border-radius:6px;text-align:center;width:44px;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--text);padding:2px 4px;">
               <span style="font-size:10px;color:var(--text2)">${c.unit}</span>
-              <button class="qty-btn" onclick="adjInlineQty(this,${JSON.stringify(preset.id)},${ci},${step})">+</button>
+              <button class="qty-btn" onclick="adjInlineQty(this,'${preset.id}',${ci},${step})">+</button>
             </div>`;
           }).join('');
         }
