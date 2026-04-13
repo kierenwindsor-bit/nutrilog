@@ -902,20 +902,45 @@ const PRESETS={
   ],
 };
 
+function blankDay(date){
+  return {date,weight:'',meals:{breakfast:[],lunch:[],snack:[],drink:[],dinner:[]}};
+}
+
+function getDayStore(){
+  try{
+    const raw=localStorage.getItem('nutrilog_days');
+    if(raw) return JSON.parse(raw);
+    // Migrate from old nutrilog_v4 format
+    const old=localStorage.getItem('nutrilog_v4');
+    if(old){
+      const arr=JSON.parse(old);
+      const store={};
+      arr.forEach(d=>{if(d&&d.date)store[d.date]=d;});
+      localStorage.setItem('nutrilog_days',JSON.stringify(store));
+      localStorage.removeItem('nutrilog_v4');
+      return store;
+    }
+  }catch(e){}
+  return {};
+}
+
 function defaultWeek(){
-  return FULL_DATES.map(date=>({date,weight:'',
-    meals:{breakfast:[],lunch:[],snack:[],drink:[],dinner:[]}}));
+  const store=getDayStore();
+  return FULL_DATES.map(date=>store[date]||blankDay(date));
 }
+
 function loadState(){
-  try{const s=localStorage.getItem('nutrilog_v4');if(s)return JSON.parse(s);}catch(e){}
-  const w=defaultWeek();const d=w[0];
-  d.meals.breakfast.push({name:'Porridge (80g oats, water, honey)',kcal:350,protein:10});
-  d.meals.lunch.push({name:'3 chicken drumsticks (skin on) + BBQ sauce',kcal:480,protein:43});
-  d.meals.snack.push({name:'Protein shake (30g whey + 250ml semi-skimmed milk)',kcal:230,protein:33});
-  d.meals.drink.push({name:'Small cappuccino (whole milk)',kcal:75,protein:4});
-  d.meals.dinner.push({name:'Roast dinner (potatoes, chicken, broccoli, carrot, stuffing, gravy, Yorkshire pud)',kcal:860,protein:59});
-  return w;
+  return defaultWeek();
 }
+
+function save(){
+  try{
+    const store=getDayStore();
+    state.forEach(d=>{if(d&&d.date)store[d.date]=d;});
+    localStorage.setItem('nutrilog_days',JSON.stringify(store));
+  }catch(e){}
+}
+
 let state=loadState();
 // Calculate today's index within the week (Mon=0 to Sun=6), clamped to 0-6
 function getTodayIndex(){
@@ -924,7 +949,6 @@ function getTodayIndex(){
   return idx>=0?idx:0;
 }
 let viewDay=getTodayIndex();
-function save(){try{localStorage.setItem('nutrilog_v4',JSON.stringify(state));}catch(e){}}
 function totals(day){let k=0,p=0,f=0,c=0;Object.values(day.meals).forEach(a=>a.forEach(i=>{k+=i.kcal;p+=i.protein;f+=(i.fat||0);c+=(i.carbs||0);}));return{kcal:k,protein:p,fat:f,carbs:c};}
 function fmt(n){return Math.round(n).toLocaleString();}
 function pct(v,t){return Math.min(100,Math.round((v/t)*100));}
