@@ -957,7 +957,7 @@ function toast(msg){const el=document.getElementById('toast');el.textContent=msg
 
 function exportCSV(){
   const ET=getTargets();
-  const wkStart=FULL_DATES[0]||'this-week';
+  const wkStart=_currentWeekIsos[0]||'this-week';
   let csv = `Week Starting,${wkStart}\n`;
   csv += `Daily Targets,Kcal: ${ET.kcal},Protein: ${ET.protein}g,Fat: ${ET.fat}g,Carbs: ${ET.carbs}g\n\n`;
   csv += 'Day,Date,Weight (kg),Total Kcal,Total Protein (g),Total Fat (g),Total Carbs (g),vs Kcal Target,vs Protein Target\n';
@@ -965,7 +965,7 @@ function exportCSV(){
     const {kcal,protein,fat,carbs} = totals(day);
     const vsK = kcal > 0 ? kcal - ET.kcal : '';
     const vsP = protein > 0 ? protein - ET.protein : '';
-    csv += `${DAYS[i]},${DATES[i]},${day.weight||''},${kcal||''},${protein||''},${fat||''},${carbs||''},${vsK},${vsP}\n`;
+    csv += `${DAYS[i]},${_currentWeekDisplays[i]||DATES[i]},${day.weight||''},${kcal||''},${protein||''},${fat||''},${carbs||''},${vsK},${vsP}\n`;
   });
   csv += '\n\nDETAILED MEAL LOG\n';
   csv += 'Day,Date,Meal Slot,Description,Kcal,Protein (g),Fat (g),Carbs (g)\n';
@@ -997,10 +997,14 @@ function renderHome(){
   const h=new Date().getHours();
   document.getElementById('time-greet').textContent=h<12?'morning':h<17?'afternoon':'evening';
   const day=state[viewDay];
-  const isToday=viewDay===getTodayIndex();
+  const todayIso=new Date().toISOString().split('T')[0];
+  const currentDayIso=_currentWeekIsos[viewDay]||'';
+  const isToday=currentDayIso===todayIso;
   document.getElementById('hero-title').textContent=isToday?"Today's Nutrition":`${DAYS[viewDay]}'s Nutrition`;
-  document.getElementById('hero-date').textContent=`${DAYS[viewDay]} ${DATES[viewDay]}`;
-  document.getElementById('day-ind').textContent=`${viewDay+1}/7`;
+  document.getElementById('hero-date').textContent=`${DAYS[viewDay]} ${_currentWeekDisplays[viewDay]||''}`;
+  document.getElementById('day-ind').textContent=weekOffset<0
+    ? `${_currentWeekIsos[viewDay]||''}`
+    : `${viewDay+1}/7`;
   const{kcal,protein,fat,carbs}=totals(day);
   const T=getTargets();
   const trainingBonus=(state[viewDay]&&state[viewDay].training)?300:0;
@@ -1185,7 +1189,7 @@ function renderWeek(){
     card.className='day-card'+(i===getTodayIndex()?' today':'');
     card.innerHTML=`
       <div class="day-card-top">
-        <div><div class="dc-day">${DAYS[i]}${i===getTodayIndex()?' <span style="color:var(--teal);font-size:10px">TODAY</span>':''}</div><div class="dc-date">${DATES[i]}</div></div>
+        <div><div class="dc-day">${DAYS[i]}${i===getTodayIndex()?' <span style="color:var(--teal);font-size:10px">TODAY</span>':''}</div><div class="dc-date">${_currentWeekDisplays[i]||DATES[i]}</div></div>
         <div class="dc-kcal ${kcal>KCAL_T+100?'over':has?'good':''}">${has?fmt(kcal)+' kcal':'—'}</div>
       </div>
       ${has?`<div class="dc-bar"><div class="dc-bar-fill" style="width:${p}%"></div></div><div class="dc-stats"><span>${protein}g protein</span><span class="${vs>100?'over':vs<-100?'good':''}">${vs>=0?'+':''}${fmt(vs)} kcal vs target</span></div>`:'<div style="height:6px"></div>'}
@@ -1627,8 +1631,51 @@ document.querySelectorAll('.nav-btn').forEach(btn=>{
 });
 
 document.getElementById('export-btn').addEventListener('click', exportCSV);
-document.getElementById('day-prev').addEventListener('click',()=>{if(viewDay>0){viewDay--;renderHome();}});
-document.getElementById('day-next').addEventListener('click',()=>{if(viewDay<6){viewDay++;renderHome();}});
+// ── Navigation: supports going back to previous weeks ────────
+let weekOffset = 0; // 0 = current week, -7 = last week, etc
+
+function getWeekDates(offset) {
+  const today = new Date();
+  const dow = today.getDay();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((dow + 6) % 7) + offset);
+  const isos = [], displays = [];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    isos.push(d.toISOString().split('T')[0]);
+    displays.push(d.getDate() + ' ' + months[d.getMonth()]);
+  }
+  return { isos, displays };
+}
+
+function loadWeek(offset) {
+  weekOffset = offset;
+  const wk = getWeekDates(offset);
+  // Rebuild state for this week from the store
+  const store = getDayStore();
+  state = wk.isos.map(date => store[date] || blankDay(date));
+  // Update DAYS display array for this week
+  _currentWeekDisplays = wk.displays;
+  _currentWeekIsos = wk.isos;
+}
+
+// Override DATES/FULL_DATES lookups to use current loaded week
+let _currentWeekDisplays = DATES.slice();
+let _currentWeekIsos = FULL_DATES.slice();
+
+function getCurrentDates() { return _currentWeekDisplays; }
+function getCurrentIsos() { return _currentWeekIsos; }
+
+document.getElementById('day-prev').addEventListener('click',()=>{
+  if(viewDay>0){viewDay--;renderHome();}
+  else{loadWeek(weekOffset-7);viewDay=6;renderHome();}
+});
+document.getElementById('day-next').addEventListener('click',()=>{
+  if(viewDay<6){viewDay++;renderHome();}
+  else if(weekOffset<0){loadWeek(weekOffset+7);viewDay=0;renderHome();}
+});
 
 const HISTORICAL_DATA=[];
 
