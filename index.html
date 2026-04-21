@@ -3151,27 +3151,39 @@ function getAutocompleteSuggestions(query) {
 
 function showAutocomplete(slotId, query) {
   const suggestions = getAutocompleteSuggestions(query);
-  let dropdown = document.getElementById('ac-dropdown-' + slotId);
+  // Always remove old dropdown first
+  const oldDrop = document.getElementById('ac-dropdown-' + slotId);
+  if (oldDrop) oldDrop.remove();
 
-  if (!suggestions.length) {
-    if (dropdown) dropdown.remove();
-    return;
-  }
+  if (!suggestions.length) return;
 
-  if (!dropdown) {
-    dropdown = document.createElement('div');
-    dropdown.id = 'ac-dropdown-' + slotId;
-    dropdown.style.cssText = 'position:absolute;left:0;right:0;top:100%;z-index:300;background:var(--card);border:1px solid var(--teal-glow);border-radius:var(--rs);overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.4);';
-    const inputEl = document.getElementById('cd-' + slotId);
-    if (inputEl) {
-      inputEl.parentElement.style.position = 'relative';
-      inputEl.parentElement.appendChild(dropdown);
-    }
-  }
+  const inputEl = document.getElementById('cd-' + slotId);
+  if (!inputEl) return;
+
+  // Position dropdown over the input using getBoundingClientRect
+  const rect = inputEl.getBoundingClientRect();
+  const dropdown = document.createElement('div');
+  dropdown.id = 'ac-dropdown-' + slotId;
+  dropdown.style.cssText = [
+    'position:fixed',
+    'left:' + Math.max(8, rect.left) + 'px',
+    'right:8px',
+    'top:' + (rect.bottom + 4) + 'px',
+    'z-index:9999',
+    'background:var(--card)',
+    'border:1px solid var(--teal-glow)',
+    'border-radius:var(--rs)',
+    'overflow:hidden',
+    'box-shadow:0 8px 32px rgba(0,0,0,0.6)',
+    'max-height:280px',
+    'overflow-y:auto'
+  ].join(';');
 
   dropdown.innerHTML = suggestions.map((s, i) => `
-    <div class="ac-item" onclick="selectAutocomplete('${slotId}',${i})"
-      style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;gap:10px;">
+    <div class="ac-item"
+      onmousedown="event.preventDefault();selectAutocomplete('${slotId}',${i})"
+      ontouchstart="selectAutocomplete('${slotId}',${i})"
+      style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;gap:10px;-webkit-tap-highlight-color:rgba(0,212,170,0.15)">
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div>
         <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:1px;">${s.source === 'preset' ? '⚡ preset' : s.source === 'food' ? '🥗 ' + (s.hint||'') : '🕐 recent'}</div>
@@ -3181,14 +3193,15 @@ function showAutocomplete(slotId, query) {
       </div>
     </div>`).join('');
 
-  // Store suggestions on dropdown for selection
   dropdown._suggestions = suggestions;
+  document.body.appendChild(dropdown);
 }
 
 function selectAutocomplete(slotId, idx) {
   const dropdown = document.getElementById('ac-dropdown-' + slotId);
-  if (!dropdown || !dropdown._suggestions) return;
-  const s = dropdown._suggestions[idx];
+  const suggestions = dropdown ? dropdown._suggestions : null;
+  if (!suggestions) return;
+  const s = suggestions[idx];
   const dEl = document.getElementById('cd-' + slotId);
   const kEl = document.getElementById('ck-' + slotId);
   const pEl = document.getElementById('cp-' + slotId);
@@ -3199,15 +3212,17 @@ function selectAutocomplete(slotId, idx) {
   if (pEl) pEl.value = s.protein;
   if (fEl) fEl.value = s.fat;
   if (cEl) cEl.value = s.carbs;
-  dropdown.remove();
+  if (dropdown) dropdown.remove();
+  // Move focus to kcal field if it's empty, otherwise close keyboard
+  if (kEl && !kEl.value) kEl.focus();
 }
 
 function hideAutocomplete(slotId) {
-  // Small delay so tap on suggestion registers before hiding
+  // Longer delay on mobile so ontouchstart fires before blur removes dropdown
   setTimeout(() => {
     const dropdown = document.getElementById('ac-dropdown-' + slotId);
     if (dropdown) dropdown.remove();
-  }, 200);
+  }, 300);
 }
 
 
