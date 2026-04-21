@@ -1088,7 +1088,7 @@ function renderHome(){
         ${chipsHtml}
         <div class="panel-lbl">${pitems.length?'Or enter manually':'Enter manually'}</div>
         <div class="custom-row" style="flex-wrap:wrap;gap:6px;">
-          <input class="inp-d" id="cd-${slot.id}" placeholder="Description" type="text" style="flex:1;min-width:140px;">
+          <input class="inp-d" id="cd-${slot.id}" placeholder="Description" type="text" style="flex:1;min-width:140px;" oninput="showAutocomplete('${slot.id}',this.value)" onfocus="showAutocomplete('${slot.id}',this.value)" onblur="hideAutocomplete('${slot.id}')" autocomplete="off">
           <input class="inp-n" id="ck-${slot.id}" placeholder="kcal *" type="number">
           <input class="inp-n" id="cp-${slot.id}" placeholder="prot g" type="number">
           <input class="inp-n" id="cf-${slot.id}" placeholder="fat g" type="number" style="border-color:rgba(249,115,22,0.3)">
@@ -1169,6 +1169,7 @@ function logEntry(slot,name,kcal,protein,fat=0,carbs=0,presetId=null){
   const timeStr=now.toTimeString().slice(0,5);
   state[viewDay].meals[slot].push({name,kcal,protein,fat,carbs,time:timeStr});
   if(presetId) savePresetUsage(presetId);
+  saveMealToHistory(name, kcal, protein, fat, carbs);
   save();
   renderHome();
   document.querySelectorAll('.add-panel').forEach(p=>p.classList.remove('open'));
@@ -2272,7 +2273,6 @@ function bamAdjQty(idx, delta) {
   let bamCFArr = [];
   try { const cf = localStorage.getItem('nutrilog_custom_foods'); if(cf) bamCFArr = JSON.parse(cf); } catch(e) {}
   const food = bamItems[idx].custom ? { unit: bamItems[idx].unit } : [...FOOD_DB, ...bamCFArr].find(f => f.id === bamItems[idx].foodId);
-  const min = food && (food.unit === 'g' || food.unit === 'ml') ? 10 : 1;
   const step = food && (food.unit === 'g' || food.unit === 'ml') ? 10 : 1;
   // Sync from input in case user overtyped
   const selList = document.getElementById('bam-sel-list');
@@ -2280,7 +2280,7 @@ function bamAdjQty(idx, delta) {
     const inputs = selList.querySelectorAll('input[type="number"]');
     if (inputs[idx]) { const typed = parseFloat(inputs[idx].value); if (!isNaN(typed)) bamItems[idx].qty = typed; }
   }
-  bamItems[idx].qty = Math.max(min, Math.round((bamItems[idx].qty + delta) * 100) / 100);
+  bamItems[idx].qty = Math.max(0, Math.round((bamItems[idx].qty + delta) * 100) / 100);
   renderBam();
 }
 
@@ -2573,11 +2573,10 @@ function adjInlineQty(btn, presetId, compIdx, delta) {
   if (!preset) return;
   const qtys = getPresetQtys(preset);
   const comp = preset.components[compIdx];
-  const min = comp.unit === 'g' || comp.unit === 'ml' ? 10 : 1;
   // Sync from input in case user overtyped
   const el = document.getElementById(`iqv-${presetId}-${compIdx}`);
   if (el) { const typed = parseFloat(el.value); if (!isNaN(typed)) qtys[compIdx] = typed; }
-  qtys[compIdx] = Math.max(min, Math.round((qtys[compIdx] + delta) * 100) / 100);
+  qtys[compIdx] = Math.max(0, Math.round((qtys[compIdx] + delta) * 100) / 100);
   if (el) el.value = qtys[compIdx];
   const t = calcLiveTotals(preset);
   const totEl = document.getElementById(`ipt-${presetId}`);
@@ -3050,6 +3049,150 @@ function renderMacroPie() {
 // ════════════════════════════════════════════════════════════════
 // UPDATE defaultWeek to include new fields
 // ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════
+// MEAL HISTORY AUTOCOMPLETE
+// ════════════════════════════════════════════════════════════════
+function saveMealToHistory(name, kcal, protein, fat, carbs) {
+  if (!name || !kcal) return;
+  try {
+    const raw = localStorage.getItem('nutrilog_meal_history');
+    const history = raw ? JSON.parse(raw) : [];
+    // Remove duplicate if exists (case-insensitive)
+    const idx = history.findIndex(h => h.name.toLowerCase() === name.toLowerCase());
+    if (idx >= 0) history.splice(idx, 1);
+    // Add to front
+    history.unshift({ name, kcal, protein: protein||0, fat: fat||0, carbs: carbs||0 });
+    // Keep last 100 entries
+    localStorage.setItem('nutrilog_meal_history', JSON.stringify(history.slice(0, 100)));
+  } catch(e) {}
+}
+
+function getMealHistory() {
+  try {
+    const raw = localStorage.getItem('nutrilog_meal_history');
+    return raw ? JSON.parse(raw) : [];
+  } catch(e) { return []; }
+}
+
+function getAutocompleteSuggestions(query) {
+  const q = query.toLowerCase().trim();
+  const results = [];
+  const seen = new Set();
+
+  // Search meal history first
+  getMealHistory().forEach(h => {
+    if (!q || h.name.toLowerCase().includes(q)) {
+      if (!seen.has(h.name.toLowerCase())) {
+        results.push({ name: h.name, kcal: h.kcal, protein: h.protein, fat: h.fat, carbs: h.carbs, source: 'history' });
+        seen.add(h.name.toLowerCase());
+      }
+    }
+  });
+
+  // Search presets (components and whole meals)
+  const allPresets = loadPresets(BUILTIN_PRESETS);
+  allPresets.forEach(p => {
+    if (p.whole && p.total) {
+      if (!q || p.name.toLowerCase().includes(q)) {
+        if (!seen.has(p.name.toLowerCase())) {
+          results.push({ name: p.name, kcal: p.total.kcal, protein: p.total.protein||0, fat: p.total.fat||0, carbs: p.total.carbs||0, source: 'preset' });
+          seen.add(p.name.toLowerCase());
+        }
+      }
+    } else if (p.components) {
+      // For component presets, offer the whole meal at default qtys
+      if (!q || p.name.toLowerCase().includes(q)) {
+        if (!seen.has(p.name.toLowerCase())) {
+          const t = calcLiveTotals(p);
+          results.push({ name: p.name, kcal: t.kcal, protein: t.protein, fat: t.fat, carbs: t.carbs, source: 'preset' });
+          seen.add(p.name.toLowerCase());
+        }
+      }
+      // Also offer individual components
+      p.components.forEach(c => {
+        const cName = c.name;
+        if (!q || cName.toLowerCase().includes(q)) {
+          if (!seen.has(cName.toLowerCase())) {
+            results.push({
+              name: cName,
+              kcal: Math.round(c.qty * (c.perUnit.kcal||0)),
+              protein: Math.round(c.qty * (c.perUnit.protein||0)),
+              fat: Math.round(c.qty * (c.perUnit.fat||0)),
+              carbs: Math.round(c.qty * (c.perUnit.carbs||0)),
+              source: 'preset'
+            });
+            seen.add(cName.toLowerCase());
+          }
+        }
+      });
+    }
+  });
+
+  return results.slice(0, 8);
+}
+
+function showAutocomplete(slotId, query) {
+  const suggestions = getAutocompleteSuggestions(query);
+  let dropdown = document.getElementById('ac-dropdown-' + slotId);
+
+  if (!suggestions.length) {
+    if (dropdown) dropdown.remove();
+    return;
+  }
+
+  if (!dropdown) {
+    dropdown = document.createElement('div');
+    dropdown.id = 'ac-dropdown-' + slotId;
+    dropdown.style.cssText = 'position:absolute;left:0;right:0;top:100%;z-index:300;background:var(--card);border:1px solid var(--teal-glow);border-radius:var(--rs);overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.4);';
+    const inputEl = document.getElementById('cd-' + slotId);
+    if (inputEl) {
+      inputEl.parentElement.style.position = 'relative';
+      inputEl.parentElement.appendChild(dropdown);
+    }
+  }
+
+  dropdown.innerHTML = suggestions.map((s, i) => `
+    <div class="ac-item" onclick="selectAutocomplete('${slotId}',${i})"
+      style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;gap:10px;">
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div>
+        <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:1px;">${s.source === 'preset' ? '⚡ preset' : '🕐 recent'}</div>
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--teal);flex-shrink:0;text-align:right;">
+        ${s.kcal} kcal<br><span style="color:var(--text3)">${s.protein}p · ${s.fat}f · ${s.carbs}c</span>
+      </div>
+    </div>`).join('');
+
+  // Store suggestions on dropdown for selection
+  dropdown._suggestions = suggestions;
+}
+
+function selectAutocomplete(slotId, idx) {
+  const dropdown = document.getElementById('ac-dropdown-' + slotId);
+  if (!dropdown || !dropdown._suggestions) return;
+  const s = dropdown._suggestions[idx];
+  const dEl = document.getElementById('cd-' + slotId);
+  const kEl = document.getElementById('ck-' + slotId);
+  const pEl = document.getElementById('cp-' + slotId);
+  const fEl = document.getElementById('cf-' + slotId);
+  const cEl = document.getElementById('cc-' + slotId);
+  if (dEl) dEl.value = s.name;
+  if (kEl) kEl.value = s.kcal;
+  if (pEl) pEl.value = s.protein;
+  if (fEl) fEl.value = s.fat;
+  if (cEl) cEl.value = s.carbs;
+  dropdown.remove();
+}
+
+function hideAutocomplete(slotId) {
+  // Small delay so tap on suggestion registers before hiding
+  setTimeout(() => {
+    const dropdown = document.getElementById('ac-dropdown-' + slotId);
+    if (dropdown) dropdown.remove();
+  }, 200);
+}
+
 
 // ════════════════════════════════════════════════════════════════
 // INIT NEW FEATURES
