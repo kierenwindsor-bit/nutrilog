@@ -3129,7 +3129,24 @@ function getAutocompleteSuggestions(query) {
     }
   });
 
-  return results.slice(0, 8);
+  // Search FOOD_DB
+  let customFoodsAC = [];
+  try { const cf = localStorage.getItem('nutrilog_custom_foods'); if(cf) customFoodsAC = JSON.parse(cf); } catch(e) {}
+  [...FOOD_DB, ...customFoodsAC].forEach(f => {
+    if (!q || f.name.toLowerCase().includes(q)) {
+      if (!seen.has(f.name.toLowerCase())) {
+        const kcal = Math.round(f.per.kcal * f.defaultQty);
+        const prot = Math.round(f.per.protein * f.defaultQty);
+        const fat  = Math.round(f.per.fat * f.defaultQty);
+        const carbs= Math.round(f.per.carbs * f.defaultQty);
+        results.push({ name: f.name, kcal, protein: prot, fat, carbs,
+          source: 'food', hint: f.defaultQty + (f.unit === 'g' || f.unit === 'ml' ? f.unit : '×') });
+        seen.add(f.name.toLowerCase());
+      }
+    }
+  });
+
+  return results.slice(0, 10);
 }
 
 function showAutocomplete(slotId, query) {
@@ -3157,7 +3174,7 @@ function showAutocomplete(slotId, query) {
       style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;gap:10px;">
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div>
-        <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:1px;">${s.source === 'preset' ? '⚡ preset' : '🕐 recent'}</div>
+        <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:1px;">${s.source === 'preset' ? '⚡ preset' : s.source === 'food' ? '🥗 ' + (s.hint||'') : '🕐 recent'}</div>
       </div>
       <div style="font-family:var(--mono);font-size:11px;color:var(--teal);flex-shrink:0;text-align:right;">
         ${s.kcal} kcal<br><span style="color:var(--text3)">${s.protein}p · ${s.fat}f · ${s.carbs}c</span>
