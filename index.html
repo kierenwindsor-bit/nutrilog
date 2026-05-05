@@ -907,21 +907,39 @@ function blankDay(date){
 }
 
 function getDayStore(){
+  // Seed weight data from confirmed CSV records
+  const SEED_WEIGHTS={"2026-04-06":"86.2","2026-04-08":"85.1","2026-04-10":"84.3","2026-04-11":"84.8","2026-04-13":"85.4","2026-04-15":"85.3","2026-04-16":"84.9","2026-04-18":"84.8","2026-04-21":"84.9","2026-04-23":"84.6","2026-04-25":"84.7"};
+
+  let store={};
   try{
     const raw=localStorage.getItem('nutrilog_days');
-    if(raw) return JSON.parse(raw);
-    // Migrate from old nutrilog_v4 format
-    const old=localStorage.getItem('nutrilog_v4');
-    if(old){
-      const arr=JSON.parse(old);
-      const store={};
-      arr.forEach(d=>{if(d&&d.date)store[d.date]=d;});
-      localStorage.setItem('nutrilog_days',JSON.stringify(store));
-      localStorage.removeItem('nutrilog_v4');
-      return store;
+    if(raw) store=JSON.parse(raw);
+    else {
+      // Migrate from old nutrilog_v4 format
+      const old=localStorage.getItem('nutrilog_v4');
+      if(old){
+        const arr=JSON.parse(old);
+        arr.forEach(d=>{if(d&&d.date)store[d.date]=d;});
+        localStorage.removeItem('nutrilog_v4');
+      }
     }
-  }catch(e){}
-  return {};
+  }catch(e){ store={}; }
+
+  // Apply seed weights - only set if no weight already logged for that date
+  let seedChanged=false;
+  Object.keys(SEED_WEIGHTS).forEach(date=>{
+    if(!store[date]){
+      store[date]={date,weight:SEED_WEIGHTS[date],meals:{breakfast:[],lunch:[],snack:[],drink:[],dinner:[]},training:false,note:''};
+      seedChanged=true;
+    } else if(!store[date].weight){
+      store[date].weight=SEED_WEIGHTS[date];
+      seedChanged=true;
+    }
+  });
+  if(seedChanged){
+    try{localStorage.setItem('nutrilog_days',JSON.stringify(store));}catch(e){}
+  }
+  return store;
 }
 
 function defaultWeek(){
