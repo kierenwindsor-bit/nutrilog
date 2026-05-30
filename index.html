@@ -1645,7 +1645,10 @@ document.querySelectorAll('.nav-btn').forEach(btn=>{
     document.getElementById(target).classList.add('active');btn.classList.add('active');
     if(target==='screen-week'){renderWeek();setTimeout(renderMacroPie,100);}
     if(target==='screen-presets')renderPresets();
-    if(target==='screen-weight'){renderWeightTracker(HISTORICAL_DATA,state);}
+    if(target==='screen-weight'){
+      const allDays=Object.values(getDayStore()).map(d=>({date:d.date,actual:d.weight?parseFloat(d.weight):null,trend:null}));
+      renderWeightTracker(allDays,state);
+    }
   });
 });
 
@@ -2083,7 +2086,10 @@ function setWtRange(days, btn) {
   wtRange = days;
   document.querySelectorAll('.wt-range-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  renderWeightTracker(HISTORICAL_DATA, state);
+  (function(){
+  const allDays=Object.values(getDayStore()).map(d=>({date:d.date,actual:d.weight?parseFloat(d.weight):null,trend:null}));
+  renderWeightTracker(allDays,state);
+})();
 }
 
 // ══════════════════════════════════════════
@@ -3093,12 +3099,24 @@ function getMealHistory() {
   } catch(e) { return []; }
 }
 
-function getAutocompleteSuggestions(query) {
+const SLOT_DEFAULTS={"breakfast": [{"name": "Porridge with honey", "kcal": 350, "protein": 10, "fat": 6, "carbs": 66}, {"name": "Boiled eggs on toast", "kcal": 418, "protein": 27, "fat": 20, "carbs": 32}, {"name": "3 Weetabix with semi-skimmed milk", "kcal": 292, "protein": 13, "fat": 4, "carbs": 52}, {"name": "2 slices tiger loaf with Flora", "kcal": 256, "protein": 7, "fat": 8, "carbs": 39}], "lunch": [{"name": "Chicken wrap with salad", "kcal": 401, "protein": 48, "fat": 11, "carbs": 36}, {"name": "Greek yogurt and granola", "kcal": 400, "protein": 29, "fat": 8, "carbs": 52}, {"name": "M&S chicken and salad sandwich", "kcal": 420, "protein": 28, "fat": 14, "carbs": 46}, {"name": "Jacket potato with beans and cheese", "kcal": 541, "protein": 20, "fat": 20, "carbs": 70}], "snack": [{"name": "Apple", "kcal": 95, "protein": 0, "fat": 0, "carbs": 24}, {"name": "Banana", "kcal": 95, "protein": 1, "fat": 0, "carbs": 23}, {"name": "Protein shake whey and milk", "kcal": 229, "protein": 33, "fat": 7, "carbs": 14}, {"name": "Rich tea x4", "kcal": 148, "protein": 2, "fat": 4, "carbs": 26}, {"name": "Rice cake x4", "kcal": 120, "protein": 2, "fat": 1, "carbs": 26}], "drink": [{"name": "Large cappuccino", "kcal": 104, "protein": 6, "fat": 5, "carbs": 8}, {"name": "Small cappuccino", "kcal": 75, "protein": 4, "fat": 4, "carbs": 6}, {"name": "Americano black", "kcal": 10, "protein": 0, "fat": 0, "carbs": 0}], "dinner": [{"name": "Chicken wrap with salad", "kcal": 401, "protein": 48, "fat": 11, "carbs": 36}, {"name": "Roast dinner chicken", "kcal": 683, "protein": 57, "fat": 17, "carbs": 75}, {"name": "Beef chilli with rice", "kcal": 600, "protein": 33, "fat": 19, "carbs": 70}, {"name": "Chicken pasta chorizo", "kcal": 616, "protein": 46, "fat": 19, "carbs": 65}, {"name": "Thai red curry chicken", "kcal": 565, "protein": 54, "fat": 14, "carbs": 55}, {"name": "Couscous harissa feta chicken", "kcal": 596, "protein": 51, "fat": 15, "carbs": 62}, {"name": "Lentil dahl with rice", "kcal": 540, "protein": 24, "fat": 8, "carbs": 90}, {"name": "Homemade flatbreads chicken salad", "kcal": 735, "protein": 73, "fat": 7, "carbs": 89}, {"name": "Chicken fajitas 2 wraps", "kcal": 585, "protein": 69, "fat": 11, "carbs": 47}]};
+
+function getAutocompleteSuggestions(query, slotId) {
   const q = query.toLowerCase().trim();
   const results = [];
   const seen = new Set();
 
-  // Search meal history first
+  // Show slot defaults when no query typed
+  if (!q && slotId && SLOT_DEFAULTS[slotId]) {
+    SLOT_DEFAULTS[slotId].forEach(d => {
+      if (!seen.has(d.name.toLowerCase())) {
+        results.push({...d, source:'default'});
+        seen.add(d.name.toLowerCase());
+      }
+    });
+  }
+
+  // Search meal history
   getMealHistory().forEach(h => {
     if (!q || h.name.toLowerCase().includes(q)) {
       if (!seen.has(h.name.toLowerCase())) {
@@ -3168,7 +3186,7 @@ function getAutocompleteSuggestions(query) {
 }
 
 function showAutocomplete(slotId, query) {
-  const suggestions = getAutocompleteSuggestions(query);
+  const suggestions = getAutocompleteSuggestions(query, slotId);
   // Always remove old dropdown first
   const oldDrop = document.getElementById('ac-dropdown-' + slotId);
   if (oldDrop) oldDrop.remove();
@@ -3186,7 +3204,7 @@ function showAutocomplete(slotId, query) {
     'position:fixed',
     'left:' + Math.max(8, rect.left) + 'px',
     'right:8px',
-    'top:' + (rect.bottom + 4) + 'px',
+    'top:' + Math.min(rect.bottom + 4, window.innerHeight - 300) + 'px',
     'z-index:9999',
     'background:var(--card)',
     'border:1px solid var(--teal-glow)',
@@ -3204,7 +3222,7 @@ function showAutocomplete(slotId, query) {
       style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;gap:10px;-webkit-tap-highlight-color:rgba(0,212,170,0.15)">
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div>
-        <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:1px;">${s.source === 'preset' ? '⚡ preset' : s.source === 'food' ? '🥗 ' + (s.hint||'') : '🕐 recent'}</div>
+        <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:1px;">${s.source === 'preset' ? '⚡ preset' : s.source === 'food' ? '🥗 ' + (s.hint||'') : s.source === 'default' ? '⭐ common' : '🕐 recent'}</div>
       </div>
       <div style="font-family:var(--mono);font-size:11px;color:var(--teal);flex-shrink:0;text-align:right;">
         ${s.kcal} kcal<br><span style="color:var(--text3)">${s.protein}p · ${s.fat}f · ${s.carbs}c</span>
