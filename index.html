@@ -78,6 +78,20 @@ canvas{width:100%;height:150px;display:block}
 .tag{background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:5px 6px 5px 10px;font-size:13px}
 .tag button{background:none;border:0;color:var(--mute);font-size:14px;padding:0 6px}
 ul.p{margin:6px 0 0;padding-left:18px;font-size:13px;color:var(--mute);line-height:1.5}
+
+.chip.info{background:rgba(167,139,250,.16);color:var(--purple);border:1px solid rgba(167,139,250,.5)}
+.chk{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);margin-top:10px}
+input[type=checkbox]{width:20px;height:20px;padding:0}
+.tg{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.tg button{min-width:64px}
+.paper{background:#fff;color:#111;border-radius:12px;padding:16px;font-size:13px;line-height:1.45}
+.paper h2{font-size:18px;margin:0 0 4px}
+.paper h3{font-size:14px;margin:14px 0 4px;border-bottom:1px solid #ccc;padding-bottom:2px}
+.paper table{width:100%;border-collapse:collapse;font-size:12px}
+.paper th,.paper td{border:1px solid #ccc;padding:3px 5px;text-align:left;vertical-align:top}
+.paper .m{color:#555;font-size:12px}
+.paper p{margin:4px 0}
+@media print{#nav,.noprint,#toast{display:none!important}html,body,#app,#view{height:auto!important;overflow:visible!important;display:block!important;background:#fff!important;max-width:none!important}#view{padding:0!important}.paper{border-radius:0;padding:0}}
 </style>
 </head>
 <body>
@@ -136,6 +150,17 @@ var RULES=[
 ];
 var VAL_FAT={id:'fat',lvl:'warn',label:'High fat',tip:'35g or more fat in one entry.'};
 var VAL_SUG={id:'sugarval',lvl:'warn',label:'Very sugary',tip:'25g or more sugar in one entry.'};
+var TAGS={
+ fodmap:{label:'Possible high FODMAP',tip:'Matches a common high-FODMAP food. Based on the name only.',
+  re:R('onions?|garlic|leeks?|shallots?|apples?|pears?|mango(?:es)?|watermelon|peach(?:es)?|plums?|nectarines?|apricots?|cherries|blackberr(?:y|ies)|honey|agave|beans?|lentils?|chickpeas?|dah?l|hummus|cauliflower|mushrooms?|cabbage|asparagus|artichokes?|cashews?|pistachios?|sorbitol|xylitol|mannitol|milk|yogh?urt|ice.?cream|custard|bread|loaf|toast|pasta|spaghetti|wheat|couscous|weetabix|rye|juice|smoothie'),
+  ex:R('lactose.free|oat milk|almond milk|soya milk|soy milk|coconut milk|green beans?|bean sprouts?|gluten.free|dairy.free')},
+ gluten:{label:'Contains gluten',tip:'Wheat, barley or rye based. Based on the name only.',
+  re:R('bread|loaf|toast|wraps?|flatbreads?|pasta|spaghetti|couscous|weetabix|biscuits?|rich tea|cakes?|pastr(?:y|ies)|pizza|sandwich|noodles|crumpets?|bagels?|croissants?|fajitas|rusks?|semolina|barley|rye|battered|breaded|pie|pies'),
+  ex:R('gluten.free|rice cakes?|oat ?cakes?|fish ?cakes?|crab ?cakes?|potato cakes?|corn')},
+ lactose:{label:'Contains lactose',tip:'Dairy food. Based on the name only.',
+  re:R('milk|cheese|cheddar|yogh?urt|cream|latte|cappuccino|flat white|mocha|custard|ice.?cream|whey|skyr|feta|mozzarella|brie|milkshake'),
+  ex:R('lactose.free|oat milk|almond milk|soya milk|soy milk|coconut milk|dairy.free|peanut|cream cracker')}
+};
 var CAFF=R('espresso|cappuccino|latte|americano|flat white|mocha|coffee|black tea|builders?|pg tips|tea|green tea|earl grey|matcha|cola|coke|energy drinks?|red bull|monster');
 var CAFF_EX=R('decaf|herbal|peppermint|camomile|chamomile|fruit tea|rich tea|teacakes?|rooibos|mint tea|ginger tea');
 var FRUIT=R('apples?|bananas?|oranges?|berries|berry|strawberr(?:y|ies)|raspberr(?:y|ies)|blueberr(?:y|ies)|grapes?|pears?|peach(?:es)?|plums?|mango(?:es)?|melon|kiwis?|pineapple|satsumas?|clementines?|tangerines?|cherries|apricots?|nectarines?');
@@ -161,7 +186,7 @@ var toastTimer=null;
 function toast(msg,ms){var t=$('#toast');t.textContent=msg;t.classList.add('on');clearTimeout(toastTimer);toastTimer=setTimeout(function(){t.classList.remove('on');},ms||2500);}
 
 /* ---------- settings ---------- */
-var cfg={targets:Object.assign({},DEFAULT_TARGETS),cont:Object.assign({},DEFAULT_CONT),words:[]};
+var cfg={targets:Object.assign({},DEFAULT_TARGETS),cont:Object.assign({},DEFAULT_CONT),words:[],tags:{fodmap:false,gluten:false,lactose:false}};
 function loadCfg(){
   try{
     var s=JSON.parse(localStorage.getItem('nutrilog_gut_settings')||'null');
@@ -169,6 +194,7 @@ function loadCfg(){
       Object.keys(DEFAULT_TARGETS).forEach(function(k){var v=parseFloat(s.targets&&s.targets[k]);if(isFinite(v)&&v>0)cfg.targets[k]=v;});
       Object.keys(DEFAULT_CONT).forEach(function(k){var v=parseFloat(s.cont&&s.cont[k]);if(isFinite(v)&&v>0)cfg.cont[k]=v;});
       cfg.words=Array.isArray(s.words)?s.words.filter(function(w){return typeof w==='string'&&w.trim();}):[];
+      if(s.tags)Object.keys(cfg.tags).forEach(function(k){cfg.tags[k]=!!s.tags[k];});
     }
   }catch(e){}
 }
@@ -257,6 +283,11 @@ function flagsFor(it){
   if(!out.some(function(r){return r.id==='fried';})&&it.fat>=HIGH_FAT)out.push(VAL_FAT);
   if(!out.some(function(r){return r.id==='sugary';})&&it.sugar!==undefined&&it.sugar>=HIGH_SUGAR)out.push(VAL_SUG);
   cfg.words.forEach(function(w){if(nm.toLowerCase().indexOf(w.toLowerCase())>=0)out.push({id:'custom',lvl:'warn',label:'Personal: '+w,tip:'On your personal list.'});});
+  Object.keys(TAGS).forEach(function(k){
+    var tg=TAGS[k];
+    if(cfg.tags[k]&&tg.re.test(nm)&&!(tg.ex&&tg.ex.test(nm)))out.push({id:'tag_'+k,lvl:'watch',label:tg.label,tip:tg.tip});
+  });
+  if(it.test)out.push({id:'test',lvl:'info',label:'Test food',tip:'Marked as a test food.'});
   return out;
 }
 function caffCount(d){
@@ -316,6 +347,116 @@ function banner(){
     return miss.length?'Lunch check in: log '+miss.join(' and ')+'.':null;
   }
   return null;
+}
+
+/* ---------- patterns and summary ---------- */
+function symptomWindow(date){
+  var e=peek(date).gut.slice();
+  peek(addDays(date,1)).gut.forEach(function(g){if(String(g.t)<'12:00')e.push(g);});
+  return e;
+}
+function isBad(e){return e.some(function(g){return (+g.bloat>=2)||(+g.pain>=2)||(+g.wind>=2);});}
+function worst(e){var w={b:0,p:0,w:0};e.forEach(function(g){w.b=Math.max(w.b,+g.bloat||0);w.p=Math.max(w.p,+g.pain||0);w.w=Math.max(w.w,+g.wind||0);});return w;}
+function patterns(endIso,nDays){
+  endIso=endIso||todayIso();nDays=nDays||28;
+  var rows=[],tests=[],today=todayIso(),res={rows:0,lines:[],tests:tests,journaled:0,foodDays:0};
+  for(var i=0;i<nDays;i++){
+    var date=addDays(endIso,-i),d=peek(date),t=totals(d);
+    if(t.n)res.foodDays++;
+    if(d.gut.length)res.journaled++;
+    var win=symptomWindow(date);
+    items(d).forEach(function(it){if(it.test)tests.push({date:date,name:it.name,w:worst(win),n:win.length});});
+    if(!t.n||!d.gut.length||date===today)continue;
+    var labs=dayFlagLabels(d).filter(function(l){return l!=='Test food';});
+    if(t.nFibre>=Math.ceil(t.n/2)&&t.fibre<cfg.targets.fibre*0.67)labs.push('Low fibre day');
+    if(t.fluid<cfg.targets.fluid*0.75)labs.push('Low fluid day');
+    rows.push({date:date,bad:isBad(win),labs:labs});
+  }
+  res.rows=rows.length;
+  var all={};rows.forEach(function(r){r.labs.forEach(function(l){all[l]=1;});});
+  var found=[];
+  Object.keys(all).forEach(function(l){
+    var ex=rows.filter(function(r){return r.labs.indexOf(l)>=0;}),no=rows.filter(function(r){return r.labs.indexOf(l)<0;});
+    if(ex.length<3||no.length<3)return;
+    var be=ex.filter(function(r){return r.bad;}).length,bn=no.filter(function(r){return r.bad;}).length;
+    var pe=be/ex.length,pn=bn/no.length;
+    if(pe-pn>=0.3)found.push({d:pe-pn,text:l+': moderate or worse symptoms on '+be+' of '+ex.length+' days with it, and '+bn+' of '+no.length+' days without.'});
+    else if(l==='Low fibre day'&&pn-pe>=0.3)found.push({d:pn-pe,text:'Days with about 20g of fibre or more: moderate or worse symptoms on '+bn+' of '+no.length+' days, against '+be+' of '+ex.length+' low fibre days. Worth mentioning to your doctor.'});
+  });
+  found.sort(function(a,b){return b.d-a.d;});
+  res.lines=found.slice(0,5).map(function(f){return f.text;});
+  return res;
+}
+function testLine(x){return x.name+' ('+x.date+'): '+(x.n?'worst bloating '+x.w.b+', pain '+x.w.p+', wind '+x.w.w+' over the next day':'no journal entries yet');}
+function patternsCard(){
+  var p=patterns(todayIso(),28),h='<div class="card"><div class="h"><b>Patterns</b><span class="sm">last 28 days</span></div>';
+  h+='<div class="sm">Completed days with food and journal entries: '+p.rows+'</div>';
+  if(p.rows<10)h+='<div class="alert tip">Keep logging. Patterns need about 10 or more days with both food and journal entries.</div>';
+  p.lines.forEach(function(l){h+='<div class="alert watch">'+esc(l)+'</div>';});
+  if(!p.lines.length&&p.rows>=10)h+='<div class="alert tip">No clear pattern yet.</div>';
+  p.tests.slice(0,5).forEach(function(x){h+='<div class="alert tip">Test food: '+esc(testLine(x))+'</div>';});
+  h+='<div class="note">These are patterns in your diary, not proof of cause. Take them to your doctor.</div>';
+  h+='<button class="btn full" style="margin-top:10px" data-act="sumOpen">GP summary</button></div>';
+  return h;
+}
+function buildSummary(n){
+  var end=todayIso(),start=addDays(end,-(n-1)),T=cfg.targets;
+  var S={days:0,kcal:0,prot:0,fd:0,fibre:0,sd:0,sat:0,ud:0,sug:0,wd:0,fl:0};
+  var flagDays={},stool={},nStool=0,stoolSum=0,stoolOff=0,entries=[],nE=0,sb=0,sp=0,sw=0,symDays=0;
+  for(var i=0;i<n;i++){
+    var date=addDays(start,i),d=peek(date),t=totals(d);
+    if(t.n){S.days++;S.kcal+=t.kcal;S.prot+=t.protein;}
+    if(t.nFibre){S.fd++;S.fibre+=t.fibre;}
+    if(t.nSat){S.sd++;S.sat+=t.satfat;}
+    if(t.nSugar){S.ud++;S.sug+=t.sugar;}
+    if(t.fluid){S.wd++;S.fl+=t.fluid;}
+    dayFlagLabels(d).forEach(function(l){if(l!=='Test food')flagDays[l]=(flagDays[l]||0)+1;});
+    var g=gutSummary(d);if(g.bl>=2||g.pn>=2||g.wd>=2)symDays++;
+    d.gut.slice().sort(function(a,b){return String(a.t).localeCompare(String(b.t));}).forEach(function(e){
+      entries.push({date:date,e:e});nE++;sb+=+e.bloat||0;sp+=+e.pain||0;sw+=+e.wind||0;
+      if(e.stool!==''&&e.stool!=null){stool[e.stool]=(stool[e.stool]||0)+1;nStool++;stoolSum+=+e.stool;if(+e.stool<3||+e.stool>4)stoolOff++;}
+    });
+  }
+  function av(sum,k,dp){return k?fmt(sum/k)+(dp||''):'-';}
+  function row(a,b){return '<tr><td>'+a+'</td><td>'+b+'</td></tr>';}
+  var h='<h2>NutriLog diary summary</h2><div class="m">'+start+' to '+end+' ('+n+' days). Self-reported diary. Food values are estimates.</div>';
+  h+='<h3>Food and fluid</h3><table>'+
+    row('Days with food logged',S.days+' of '+n)+
+    row('Average calories (target '+T.kcal+')',S.days?Math.round(S.kcal/S.days):'-')+
+    row('Average protein (target '+T.protein+'g)',av(S.prot,S.days,'g'))+
+    row('Average fibre (target '+T.fibre+'g)',av(S.fibre,S.fd,'g')+(S.fd?' ('+S.fd+' days with fibre data)':''))+
+    row('Average saturated fat (limit '+T.satfat+'g)',av(S.sat,S.sd,'g'))+
+    row('Average sugars (limit '+T.sugar+'g)',av(S.sug,S.ud,'g'))+
+    row('Average fluid (target '+T.fluid+' ml)',S.wd?Math.round(S.fl/S.wd)+' ml ('+S.wd+' days logged)':'-')+'</table>';
+  h+='<h3>Gut journal</h3><table>'+
+    row('Journal entries',nE)+
+    row('Days with a moderate or worse symptom (2 or 3)',symDays)+
+    row('Average per entry: bloating / pain / wind',av(sb,nE)+' / '+av(sp,nE)+' / '+av(sw,nE)+' (scale 0 to 3)')+
+    row('Stool entries / average Bristol type',nStool+' / '+av(stoolSum,nStool))+
+    row('Stool outside types 3 to 4',nStool?stoolOff+' of '+nStool:'-')+
+    row('Bristol types recorded',[1,2,3,4,5,6,7].map(function(k){return k+': '+(stool[k]||0);}).join(', '))+'</table>';
+  var fl=Object.keys(flagDays).sort(function(a,b){return flagDays[b]-flagDays[a];});
+  h+='<h3>Foods and drinks that got a reminder (days)</h3>'+(fl.length?'<p>'+fl.map(function(l){return esc(l)+': '+flagDays[l];}).join('; ')+'</p>':'<p>None.</p>');
+  var pt=patterns(end,n);
+  h+='<h3>Patterns noticed</h3>'+(pt.lines.length?pt.lines.map(function(l){return '<p>'+esc(l)+'</p>';}).join(''):'<p>No clear pattern ('+pt.rows+' completed days with food and journal entries).</p>')+'<p class="m">Patterns in a diary are not proof of cause.</p>';
+  if(pt.tests.length)h+='<h3>Test foods</h3>'+pt.tests.map(function(x){return '<p>'+esc(testLine(x))+'</p>';}).join('');
+  var wp=weightSeries().filter(function(q){return q.d>=start&&q.d<=end;});
+  h+='<h3>Weight</h3><p>'+(wp.length?wp[0].d+': '+fmt(wp[0].w)+' kg, '+wp[wp.length-1].d+': '+fmt(wp[wp.length-1].w)+' kg ('+wp.length+' readings)':'No readings in this period.')+'</p>';
+  h+='<h3>Journal entries</h3>';
+  if(entries.length){
+    h+='<table><tr><th>Date</th><th>Time</th><th>Stool</th><th>Bloat</th><th>Pain</th><th>Wind</th><th>Notes</th></tr>';
+    entries.slice(-80).forEach(function(x){var e=x.e;h+='<tr><td>'+x.date+'</td><td>'+esc(e.t)+'</td><td>'+(e.stool===''||e.stool==null?'-':e.stool)+'</td><td>'+e.bloat+'</td><td>'+e.pain+'</td><td>'+e.wind+'</td><td>'+esc(e.notes||'')+'</td></tr>';});
+    h+='</table>'+(entries.length>80?'<p class="m">Showing the latest 80 entries.</p>':'');
+  }else h+='<p>None in this period.</p>';
+  h+='<p class="m" style="margin-top:12px">Prepared from a personal diary app. It is not a medical record or a diagnosis.</p>';
+  return h;
+}
+var PAPER_CSS='body{font:14px/1.45 Arial,sans-serif;color:#111;margin:20px;max-width:800px}h2{font-size:20px;margin:0 0 4px}h3{font-size:15px;margin:16px 0 4px;border-bottom:1px solid #ccc;padding-bottom:2px}table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #ccc;padding:4px 6px;text-align:left;vertical-align:top}.m{color:#555;font-size:13px}p{margin:4px 0}';
+function viewSummary(){
+  var h='<div class="noprint"><div class="row"><button class="mini" data-act="sumClose">Back</button>'+
+    [14,28,56].map(function(n){return '<button class="mini'+(sumDays===n?' go':'')+'" data-act="sumDays" data-n="'+n+'">'+n+' days</button>';}).join('')+
+    '</div><div class="row" style="margin:8px 0 12px"><button class="btn" data-act="sumPrint">Print or save as PDF</button><button class="btn ghost" data-act="sumDownload">Download file</button></div></div>';
+  return h+'<div class="paper">'+buildSummary(sumDays)+'</div>';
 }
 
 /* ---------- CSV ---------- */
@@ -413,7 +554,7 @@ function parseWeight(s){
 
 /* ---------- state ---------- */
 var tab='today',viewDate=todayIso(),weekStart=mondayOf(todayIso()),wrange='12w';
-var panel=null,sugList=[],fluidKind='water';
+var panel=null,sugList=[],fluidKind='water',sumOpen=false,sumDays=28;
 function newJ(){return{id:null,t:nowHM(),stool:'',bloat:0,pain:0,wind:0,notes:''};}
 var jform=newJ();
 var lastToday=todayIso(),lastBanner='';
@@ -434,6 +575,12 @@ function dayNav(){
 function chips(it){
   return flagsFor(it).map(function(f){return '<span class="chip '+f.lvl+'" title="'+esc(f.tip)+'">'+esc(f.label)+'</span>';}).join('');
 }
+function labelHTML(){
+  var l=panel.l;
+  function lf(k,t){return '<div><label for="lb_'+k+'">'+t+'</label><input id="lb_'+k+'" data-enter="labelCalc" type="number" inputmode="decimal" step="any" min="0" value="'+esc(l[k])+'"></div>';}
+  if(!panel.lbl)return '<div style="margin-top:8px"><button class="mini" data-act="labelToggle">Enter from a label</button></div>';
+  return '<div class="panel" style="background:var(--bg)"><div class="h"><b>From a label</b><button class="mini" data-act="labelToggle">Hide</button></div><div class="sm">Type the per 100g (or per 100ml) column, then how much you had.</div><div class="g4">'+lf('kcal','Kcal')+lf('protein','Protein')+lf('fat','Fat')+lf('carbs','Carbs')+'</div><div class="g3">'+lf('fibre','Fibre')+lf('satfat','Sat fat')+lf('sugar','Sugars')+'</div>'+lf('g','Grams or ml you had')+'<button class="btn full" style="margin-top:10px" data-act="labelCalc">Work it out</button></div>';
+}
 function panelHTML(){
   var f=panel.f;
   function fld(k,l){return '<div><label for="pf_'+k+'">'+l+'</label><input id="pf_'+k+'" data-nut="1" data-enter="saveItem" type="number" inputmode="decimal" step="any" min="0" value="'+esc(f[k])+'"></div>';}
@@ -441,8 +588,10 @@ function panelHTML(){
     '<input id="pf_name" data-enter="saveItem" autocomplete="off" maxlength="80" value="'+esc(f.name)+'" placeholder="e.g. porridge, banana, curry">'+
     '<div id="sug"></div>'+
     '<label for="pf_mult">Portion multiplier (applies when you pick from the list)</label><input id="pf_mult" type="number" inputmode="decimal" step="0.25" min="0.1" value="'+esc(f.mult)+'">'+
+    labelHTML()+
     '<div class="g4">'+fld('kcal','Kcal')+fld('protein','Protein g')+fld('fat','Fat g')+fld('carbs','Carbs g')+'</div>'+
     '<div class="g3">'+fld('fibre','Fibre g')+fld('satfat','Sat fat g')+fld('sugar','Sugars g')+'</div>'+
+    '<label class="chk"><input id="pf_test" type="checkbox"'+(f.test?' checked':'')+'> Test food (reintroduction)</label>'+
     '<div class="note">Leave fibre, sat fat and sugars blank if you do not know them. Blank is not counted as zero.</div>'+
     '<div class="row" style="margin-top:12px"><button class="btn" data-act="saveItem">'+(panel.id?'Save changes':'Add')+'</button><button class="btn ghost" data-act="cancelItem">Cancel</button></div></div>';
 }
@@ -523,6 +672,7 @@ function viewJournal(){
   return h;
 }
 function viewWeek(){
+  if(sumOpen)return viewSummary();
   var mon=weekStart,T=cfg.targets,h='';
   h+='<div class="dnav"><button data-act="wprev" aria-label="Previous week">&lt;</button><div class="dl2">Week of '+dayLabel(mon)+'</div><button data-act="wnext" aria-label="Next week"'+(mon>=mondayOf(todayIso())?' disabled':'')+'>&gt;</button></div>';
   h+='<button class="btn full" style="margin-bottom:12px" data-act="exportCSV" data-week="1">Download this week as CSV</button>';
@@ -545,6 +695,7 @@ function viewWeek(){
     'Average fluid: '+(nfl?Math.round(sfl/nfl)+' ml':'-')+' (target '+T.fluid+' ml)<br>'+
     'Days with a food reminder: '+flagDays+'<br>'+
     'Gut entries: '+gutN+', days with a moderate or worse symptom: '+bad+'</div></div>';
+  h+=patternsCard();
   var pts=weightSeries(),last=pts[pts.length-1];
   h+='<div class="card"><div class="h"><b>Weight</b><span class="sm mono">'+(last?fmt(last.w)+' kg, trend '+fmt(last.t)+' kg':'no readings')+'</span></div><canvas id="wc"></canvas>'+
     '<div class="seg" style="margin-top:8px">'+['4w','12w','all'].map(function(r){return '<button data-act="wrange" data-r="'+r+'"'+(wrange===r?' class="on"':'')+'>'+r+'</button>';}).join('')+'</div></div>';
@@ -559,7 +710,9 @@ function viewSettings(){
     '<button class="btn full" style="margin-top:12px" data-act="saveSettings">Save settings</button></div>';
   h+='<div class="card"><div class="h"><b>Personal flag words</b></div><div class="sm">Any food whose name contains one of these gets a reminder.</div><div class="row" style="margin-top:8px"><input id="fw" data-enter="addFlagWord" maxlength="30" placeholder="e.g. mushroom"><button class="btn ghost" style="flex:none" data-act="addFlagWord">Add</button></div><div class="tags">'+
     cfg.words.map(function(w,i){return '<span class="tag">'+esc(w)+'<button data-act="delFlagWord" data-i="'+i+'" aria-label="Remove">x</button></span>';}).join('')+'</div></div>';
-  h+='<div class="card"><div class="h"><b>What gets a reminder</b></div><ul class="p"><li>Alcohol, fried or very fatty food (35g fat or more in one entry), processed meat, spicy food, very sugary food (25g sugar or more in one entry), energy drinks, fizzy drinks.</li><li>More than 3 tea or coffee drinks, or more than 3 fresh fruit entries, in a day.</li><li>Amber: beans, pulses, broccoli, cabbage and sprouts can cause wind. Keep them if they agree with you.</li><li>No FODMAP, gluten or lactose flags yet. Wait for the blood results and your doctor.</li></ul></div>';
+  h+='<div class="card"><div class="h"><b>Trigger tags</b><span class="sm">off until your doctor advises</span></div><div class="sm">Adds an amber tag to foods whose names match. Names only, so hidden ingredients are missed. Do not cut foods out because of these tags without medical advice.</div>'+
+    [['fodmap','Possible high FODMAP'],['gluten','Contains gluten'],['lactose','Contains lactose']].map(function(x){return '<div class="tg"><span>'+x[1]+'</span><button class="mini'+(cfg.tags[x[0]]?' go':'')+'" data-act="tagToggle" data-k="'+x[0]+'">'+(cfg.tags[x[0]]?'On':'Off')+'</button></div>';}).join('')+'</div>';
+  h+='<div class="card"><div class="h"><b>What gets a reminder</b></div><ul class="p"><li>Alcohol, fried or very fatty food (35g fat or more in one entry), processed meat, spicy food, very sugary food (25g sugar or more in one entry), energy drinks, fizzy drinks.</li><li>More than 3 tea or coffee drinks, or more than 3 fresh fruit entries, in a day.</li><li>Amber: beans, pulses, broccoli, cabbage and sprouts can cause wind. Keep them if they agree with you.</li><li>FODMAP, gluten and lactose tags are off. Turn them on above only if your doctor advises.</li></ul></div>';
   h+='<div class="card"><div class="h"><b>Notes on the numbers</b></div><ul class="p"><li>Fibre, saturated fat and sugars for built-in foods are estimates. Check labels for packaged food.</li><li>Sugars are total sugars, including those in fruit and milk.</li><li>Blank means unknown and is never counted as zero. Older entries have no fibre data.</li><li>This app is a diary and a reminder. It is not medical advice.</li></ul></div>';
   h+='<div class="card"><div class="h"><b>Backup</b></div><div class="sm">Data lives only on this phone. Download a backup now and then.</div><div class="row" style="margin-top:8px"><button class="btn ghost" data-act="backup">Download backup</button><button class="btn ghost" data-act="restoreOpen">Restore backup</button></div><input id="rf" type="file" accept=".json,application/json" style="display:none"></div>';
   return h;
@@ -616,9 +769,11 @@ function applyBase(){
 /* ---------- forms ---------- */
 function syncForms(){
   if(panel&&$('#pf_name')){['name','kcal','protein','fat','carbs','fibre','satfat','sugar','mult'].forEach(function(k){var e=$('#pf_'+k);if(e)panel.f[k]=e.value;});}
+  if(panel&&$('#pf_test'))panel.f.test=$('#pf_test').checked;
+  if(panel&&$('#lb_kcal'))['kcal','protein','fat','carbs','fibre','satfat','sugar','g'].forEach(function(k){var e=$('#lb_'+k);if(e)panel.l[k]=e.value;});
   if($('#jnotes')){jform.notes=$('#jnotes').value;jform.t=($('#jtime')&&$('#jtime').value)||jform.t;}
 }
-function emptyPanel(slot,id){return{slot:slot,id:id||null,base:null,sugOpen:false,f:{name:'',kcal:'',protein:'',fat:'',carbs:'',fibre:'',satfat:'',sugar:'',mult:'1'}};}
+function emptyPanel(slot,id){return{slot:slot,id:id||null,base:null,sugOpen:false,lbl:false,l:{kcal:'',protein:'',fat:'',carbs:'',fibre:'',satfat:'',sugar:'',g:''},f:{name:'',kcal:'',protein:'',fat:'',carbs:'',fibre:'',satfat:'',sugar:'',mult:'1',test:false}};}
 function findItem(slot,id){var a=peek(viewDate).meals[slot];for(var i=0;i<a.length;i++)if(a[i].id===id)return a[i];return null;}
 function shiftDay(n){
   viewDate=addDays(viewDate,n);if(viewDate>todayIso())viewDate=todayIso();
@@ -626,7 +781,7 @@ function shiftDay(n){
 }
 
 var ACT={
-  tab:function(ds){tab=ds.t;render();$('#view').scrollTop=0;},
+  tab:function(ds){tab=ds.t;sumOpen=false;render();$('#view').scrollTop=0;},
   dprev:function(){shiftDay(-1);},
   dnext:function(){shiftDay(1);},
   dtoday:function(){viewDate=todayIso();panel=null;jform=newJ();render();},
@@ -639,6 +794,7 @@ var ACT={
     panel=emptyPanel(ds.s,it.id);
     var f=panel.f;f.name=it.name;f.kcal=String(r1(it.kcal));f.protein=String(r1(it.protein));f.fat=String(r1(it.fat));f.carbs=String(r1(it.carbs));
     ['fibre','satfat','sugar'].forEach(function(k){f[k]=it[k]===undefined?'':String(r1(it[k]));});
+    f.test=!!it.test;
     render();
   },
   pick:function(ds){
@@ -654,6 +810,7 @@ var ACT={
     if(kcal>5000){toast('Calories look too high. Check the number.');return;}
     var it={id:panel.id||uid(),name:name,kcal:kcal,protein:num(f.protein)||0,fat:num(f.fat)||0,carbs:num(f.carbs)||0};
     ['fibre','satfat','sugar'].forEach(function(k){var v=num(f[k]);if(v!==undefined)it[k]=v;});
+    if(f.test)it.test=true;
     var d=getDay(viewDate),arr=d.meals[panel.slot],done=false;
     if(panel.id){for(var i=0;i<arr.length;i++)if(arr[i].id===panel.id){it.time=arr[i].time;arr[i]=it;done=true;}}
     if(!done){it.time=nowHM();arr.push(it);}
@@ -727,10 +884,32 @@ var ACT={
   },
   delFlagWord:function(ds){cfg.words.splice(+ds.i,1);saveCfg();render();},
   backup:function(){
-    download('nutrilog-backup-'+todayIso()+'.json',JSON.stringify({app:'nutrilog',version:8,days:store,settings:cfg,history:loadHist()}),'application/json');
+    download('nutrilog-backup-'+todayIso()+'.json',JSON.stringify({app:'nutrilog',version:9,days:store,settings:cfg,history:loadHist()}),'application/json');
     toast('Backup downloaded');
   },
-  restoreOpen:function(){$('#rf').click();}
+  restoreOpen:function(){$('#rf').click();},
+  labelToggle:function(){if(!panel)return;panel.lbl=!panel.lbl;render();},
+  labelCalc:function(){
+    if(!panel)return;
+    var l=panel.l,kc=num(l.kcal),g=num(l.g);
+    if(kc===undefined||!g){toast('Enter kcal per 100g and the amount you had');return;}
+    var k=g/100;
+    function put(id,v,round){$('#pf_'+id).value=v===undefined?'':String(round?Math.round(v*k):r1(v*k));}
+    put('kcal',kc,true);
+    ['protein','fat','carbs','fibre','satfat','sugar'].forEach(function(f){put(f,num(l[f]),false);});
+    panel.base=null;
+    toast('Worked out for '+fmt(g)+' g or ml. Check and save.');
+  },
+  tagToggle:function(ds){cfg.tags[ds.k]=!cfg.tags[ds.k];saveCfg();render();},
+  sumOpen:function(){sumOpen=true;render();$('#view').scrollTop=0;},
+  sumClose:function(){sumOpen=false;render();},
+  sumDays:function(ds){sumDays=+ds.n;render();},
+  sumPrint:function(){window.print();},
+  sumDownload:function(){
+    var doc='<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>NutriLog summary</title><style>'+PAPER_CSS+'</style></head><body>'+buildSummary(sumDays)+'</body></html>';
+    download('nutrilog-summary-'+todayIso()+'.html',doc,'text/html');
+    toast('Summary downloaded');
+  }
 };
 function run(act,ds){
   if(!ACT[act])return;
@@ -764,7 +943,7 @@ document.addEventListener('change',function(e){
       if(!window.confirm('Replace everything on this phone with this backup?'))return;
       var nd={};Object.keys(b.days).forEach(function(k){if(/^\d{4}-\d{2}-\d{2}$/.test(k))nd[k]=norm(b.days[k],k);});
       store=nd;save();
-      if(b.settings){try{localStorage.setItem('nutrilog_gut_settings',JSON.stringify(b.settings));}catch(x){}cfg={targets:Object.assign({},DEFAULT_TARGETS),cont:Object.assign({},DEFAULT_CONT),words:[]};loadCfg();}
+      if(b.settings){try{localStorage.setItem('nutrilog_gut_settings',JSON.stringify(b.settings));}catch(x){}cfg={targets:Object.assign({},DEFAULT_TARGETS),cont:Object.assign({},DEFAULT_CONT),words:[],tags:{fodmap:false,gluten:false,lactose:false}};loadCfg();}
       if(Array.isArray(b.history)){try{localStorage.setItem('nutrilog_gut_history',JSON.stringify(b.history.slice(0,150)));}catch(x){}}
       panel=null;render();toast('Backup restored');
     }catch(err){toast('That file is not a NutriLog backup');}
@@ -794,10 +973,11 @@ setInterval(tick,60000);
 loadCfg();loadStore();
 lastBanner=banner()||'';
 render();
-window.NL={store:function(){return store;},cfg:function(){return cfg;},flagsFor:flagsFor,caffCount:caffCount,fruitCount:fruitCount,buildCSV:buildCSV,totals:totals,peek:peek,alerts:alerts,
+window.NL={patterns:patterns,buildSummary:buildSummary,store:function(){return store;},cfg:function(){return cfg;},flagsFor:flagsFor,caffCount:caffCount,fruitCount:fruitCount,buildCSV:buildCSV,totals:totals,peek:peek,alerts:alerts,
   parseWeight:parseWeight,tick:tick,mondayOf:mondayOf,addDays:addDays,sugFor:sugFor,banner:banner,
   setView:function(d){viewDate=d;render();},state:function(){return{tab:tab,viewDate:viewDate,weekStart:weekStart};},FOODS:FOODS,COMMON:COMMON,weightSeries:weightSeries};
 })();
 </script>
 </body>
 </html>
+
