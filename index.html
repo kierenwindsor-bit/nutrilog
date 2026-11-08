@@ -349,6 +349,41 @@ function banner(){
   return null;
 }
 
+/* ---------- paste-in import ---------- */
+var SLOT_ALIAS={breakfast:'breakfast',lunch:'lunch',snack:'snack',snacks:'snack',drink:'drink',drinks:'drink',dinner:'dinner'};
+function validDate(d){return /^\d{4}-\d{2}-\d{2}$/.test(d)&&iso(parse(d))===d;}
+function parseImport(text,defDate){
+  var ok=[],errors=[];
+  String(text||'').split(/\r?\n/).forEach(function(raw,i){
+    var ln=raw.trim(),L='Line '+(i+1)+': ';
+    if(!ln||ln.charAt(0)==='#')return;
+    var p=ln.split('|').map(function(x){return x.trim();}),date=defDate;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(p[0]))date=p.shift();
+    if(!validDate(date)){errors.push(L+'date is not valid');return;}
+    if(date>todayIso()){errors.push(L+'date is in the future');return;}
+    var slot=SLOT_ALIAS[(p[0]||'').toLowerCase()];
+    if(!slot){errors.push(L+'meal must be Breakfast, Lunch, Snack, Drink or Dinner');return;}
+    var name=(p[1]||'').slice(0,80);
+    if(!name){errors.push(L+'name is missing');return;}
+    var kcal=num(p[2]);
+    if(kcal===undefined||kcal>5000){errors.push(L+'kcal is missing or not a sensible number');return;}
+    for(var k=3;k<=8;k++){if(p[k]!==undefined&&p[k]!==''&&num(p[k])===undefined){errors.push(L+'field '+(k+1)+' is not a number');return;}}
+    var it={id:uid(),name:name,kcal:kcal,protein:num(p[3])||0,fat:num(p[4])||0,carbs:num(p[5])||0,time:nowHM()};
+    ['fibre','satfat','sugar'].forEach(function(f,j){var v=num(p[6+j]);if(v!==undefined)it[f]=v;});
+    ok.push({date:date,slot:slot,it:it});
+  });
+  return{ok:ok,errors:errors};
+}
+function importHTML(){
+  if(!importOpen)return '<button class="btn ghost full" style="margin-bottom:12px" data-act="importOpen">Paste entries</button>';
+  var h='<div class="card"><div class="h"><b>Paste entries</b><span class="sm">one food per line</span></div>'+
+    '<div class="sm">Meal | Name | Kcal | Protein | Fat | Carbs | Fibre | Sat fat | Sugars<br>Leave a value empty if unknown. Start a line with a date (2026-11-07 | ...) to log it on another day.</div>'+
+    '<textarea id="imp_text" style="min-height:120px;margin-top:8px" placeholder="Snack | Crackers with two hummus | 314 | 6 | 17.6 | 31.5 | 2.9 | 1.6 | 4.6">'+esc(importText)+'</textarea>';
+  importErrs.forEach(function(e){h+='<div class="alert warn">'+esc(e)+'</div>';});
+  h+='<div class="row" style="margin-top:10px"><button class="btn" data-act="importRun">Add</button><button class="btn ghost" data-act="importCancel">Cancel</button></div></div>';
+  return h;
+}
+
 /* ---------- patterns and summary ---------- */
 function symptomWindow(date){
   var e=peek(date).gut.slice();
@@ -554,7 +589,7 @@ function parseWeight(s){
 
 /* ---------- state ---------- */
 var tab='today',viewDate=todayIso(),weekStart=mondayOf(todayIso()),wrange='12w';
-var panel=null,sugList=[],fluidKind='water',sumOpen=false,sumDays=28;
+var panel=null,sugList=[],fluidKind='water',sumOpen=false,sumDays=28,importOpen=false,importText='',importErrs=[];
 function newJ(){return{id:null,t:nowHM(),stool:'',bloat:0,pain:0,wind:0,notes:''};}
 var jform=newJ();
 var lastToday=todayIso(),lastBanner='';
@@ -601,6 +636,7 @@ function viewToday(){
   if(b)h+='<div class="banner"><span>'+esc(b)+'</span><button class="mini go" data-act="tab" data-t="journal">Journal</button></div>';
   h+=dayNav();
   h+='<button class="btn full" style="margin-bottom:12px" data-act="exportCSV">Download week CSV</button>';
+  h+=importHTML();
   var al=alerts(d),tp=tips(d,t);
   if(al.length||tp.length){
     h+='<div class="card"><div class="h"><b>Reminders</b><span class="sm">Everything is still saved</span></div>';
@@ -769,6 +805,7 @@ function applyBase(){
 /* ---------- forms ---------- */
 function syncForms(){
   if(panel&&$('#pf_name')){['name','kcal','protein','fat','carbs','fibre','satfat','sugar','mult'].forEach(function(k){var e=$('#pf_'+k);if(e)panel.f[k]=e.value;});}
+  if($('#imp_text'))importText=$('#imp_text').value;
   if(panel&&$('#pf_test'))panel.f.test=$('#pf_test').checked;
   if(panel&&$('#lb_kcal'))['kcal','protein','fat','carbs','fibre','satfat','sugar','g'].forEach(function(k){var e=$('#lb_'+k);if(e)panel.l[k]=e.value;});
   if($('#jnotes')){jform.notes=$('#jnotes').value;jform.t=($('#jtime')&&$('#jtime').value)||jform.t;}
@@ -884,10 +921,28 @@ var ACT={
   },
   delFlagWord:function(ds){cfg.words.splice(+ds.i,1);saveCfg();render();},
   backup:function(){
-    download('nutrilog-backup-'+todayIso()+'.json',JSON.stringify({app:'nutrilog',version:9,days:store,settings:cfg,history:loadHist()}),'application/json');
+    download('nutrilog-backup-'+todayIso()+'.json',JSON.stringify({app:'nutrilog',version:10,days:store,settings:cfg,history:loadHist()}),'application/json');
     toast('Backup downloaded');
   },
   restoreOpen:function(){$('#rf').click();},
+  importOpen:function(){importOpen=true;importErrs=[];render();var e=$('#imp_text');if(e)e.focus();},
+  importCancel:function(){importOpen=false;importText='';importErrs=[];render();},
+  importRun:function(){
+    var r=parseImport(importText,viewDate);
+    if(r.errors.length){importErrs=r.errors.slice(0,8);render();return;}
+    if(!r.ok.length){importErrs=['Nothing to add. Paste at least one line.'];render();return;}
+    var added=0,dup=0,warn={};
+    r.ok.forEach(function(x){
+      var arr=getDay(x.date).meals[x.slot];
+      var same=arr.some(function(y){return y.name.toLowerCase()===x.it.name.toLowerCase()&&Math.round(y.kcal)===Math.round(x.it.kcal);});
+      if(same){dup++;return;}
+      arr.push(x.it);addHist(x.it);added++;
+      flagsFor(x.it).forEach(function(f){if(f.lvl==='warn')warn[f.label]=1;});
+    });
+    save();importOpen=false;importText='';importErrs=[];render();
+    var w=Object.keys(warn);
+    toast('Added '+added+(dup?', skipped '+dup+' already logged':'')+(w.length?'. Reminder: '+w.join(', '):''),w.length?5000:3000);
+  },
   labelToggle:function(){if(!panel)return;panel.lbl=!panel.lbl;render();},
   labelCalc:function(){
     if(!panel)return;
@@ -973,7 +1028,7 @@ setInterval(tick,60000);
 loadCfg();loadStore();
 lastBanner=banner()||'';
 render();
-window.NL={patterns:patterns,buildSummary:buildSummary,store:function(){return store;},cfg:function(){return cfg;},flagsFor:flagsFor,caffCount:caffCount,fruitCount:fruitCount,buildCSV:buildCSV,totals:totals,peek:peek,alerts:alerts,
+window.NL={parseImport:parseImport,patterns:patterns,buildSummary:buildSummary,store:function(){return store;},cfg:function(){return cfg;},flagsFor:flagsFor,caffCount:caffCount,fruitCount:fruitCount,buildCSV:buildCSV,totals:totals,peek:peek,alerts:alerts,
   parseWeight:parseWeight,tick:tick,mondayOf:mondayOf,addDays:addDays,sugFor:sugFor,banner:banner,
   setView:function(d){viewDate=d;render();},state:function(){return{tab:tab,viewDate:viewDate,weekStart:weekStart};},FOODS:FOODS,COMMON:COMMON,weightSeries:weightSeries};
 })();
